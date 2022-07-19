@@ -4,21 +4,21 @@ services:
     image: mysql:8.0.26
     environment:
       MYSQL_ROOT_PASSWORD: mysql
-    container_name: "mysql-1"
+    container_name: "mysql-reservation"
     ports:
       - "3306:3306"
     networks:
-      - sample-network
+      - reservation-network
   cassandra:
     image: cassandra:3.11
-    container_name: "cassandra-1"
+    container_name: "cassandra-reservation"
     ports:
       - "9042:9042"
     networks:
-      - sample-network
+      - reservation-network
   schema-loader:
     image: ghcr.io/scalar-labs/scalardb-schema-loader:3.5.2
-    container_name: "schema-loader-1"
+    container_name: "schema-loader-reservation"
     depends_on:
       - cassandra
       - mysql
@@ -29,8 +29,8 @@ services:
     entrypoint: /bin/bash
     command: /wait-for-it.sh -t 60 cassandra:9042 -- java -jar app.jar -f /schema.json --config /database.properties --replication-factor 1 --coordinator
     networks:
-      - sample-network
+      - reservation-network
     restart: on-failure
 networks:
-  sample-network:
-    name: sample-network
+  reservation-network:
+    name: reservation-network

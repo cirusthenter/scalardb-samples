@@ -1,259 +1,201 @@
-# Multi-storage Transaction Sample
+# scalardb-resrevation
 
-This is a sample application for Multi-storage Transaction in Scalar DB.
+## Requirement
 
-## Prerequisites
-- Java (OpenJDK 8 or higher)
-- Gradle
-- Docker, Docker Compose
+### Docker
 
-## Sample application
-
-### Overview
-
-This is a simple EC application where you can order items and pay with a credit card using Scalar DB.
-
-In this article, you create the sample application on Cassandra and MySQL.
-With Multi-storage Transaction in Scalar DB, you can execute a transaction that spans Cassandra and MySQL.
-Please note that application-specific error handling, authentication processing, etc., are omitted in the sample application since it focuses on explaining how to use Scalar DB.
-
-![Overview](images/overview.png)
-
-### Schema
-
-[The schema](schema.json) is as follows:
-
-```json
-{
-  "customer.customers": {
-    "transaction": true,
-    "partition-key": [
-      "customer_id"
-    ],
-    "columns": {
-      "customer_id": "INT",
-      "name": "TEXT",
-      "credit_limit": "INT",
-      "credit_total": "INT"
-    }
-  },
-  "order.orders": {
-    "transaction": true,
-    "partition-key": [
-      "customer_id"
-    ],
-    "clustering-key": [
-      "timestamp"
-    ],
-    "secondary-index": [
-      "order_id"
-    ],
-    "columns": {
-      "order_id": "TEXT",
-      "customer_id": "INT",
-      "timestamp": "BIGINT"
-    }
-  },
-  "order.statements": {
-    "transaction": true,
-    "partition-key": [
-      "order_id"
-    ],
-    "clustering-key": [
-      "item_id"
-    ],
-    "columns": {
-      "order_id": "TEXT",
-      "item_id": "INT",
-      "count": "INT"
-    }
-  },
-  "order.items": {
-    "transaction": true,
-    "partition-key": [
-      "item_id"
-    ],
-    "columns": {
-      "item_id": "INT",
-      "name": "TEXT",
-      "price": "INT"
-    }
-  }
-}
-```
-
-The `customers` table is created in the `customer` namespace. And the `orders`, `statements`, and `items` tables are created in the `order` namespace.
-
-The `customer.customers` table manages customers' information.
-The `credit_limit` is the maximum amount of money a lender will allow each customer to spend using a credit card, and the `credit_total` is the amount of money that each customer has already spent by using the credit card.
-
-The `orders.orders` table manages orders' information, and the `orders.statements` table manages the statements' information of the orders. Finally, the `orders.items` table manages items' information to be ordered.
-
-The ER diagram for the schema is as follows:
-
-![ERD](images/ERD.png)
-
-### Transactions
-
-The following five transactions are implemented in this sample application:
-
-1. Getting customer information
-3. Placing an order. An order is paid by a credit card. It first checks if the amount of the money of the order exceeds the credit limit. If the check passes, it records order histories and updates the `credit_total`
-4. Getting order information by order ID
-5. Getting order information by customer ID
-6. Repayment. It reduces the amount of `credit_total`.
-
-### Configuration
-
-The configurations for the sample application is as follows:
-
-```properties
-scalar.db.storage=multi-storage
-scalar.db.multi_storage.storages=cassandra,mysql
-scalar.db.multi_storage.storages.cassandra.storage=cassandra
-scalar.db.multi_storage.storages.cassandra.contact_points=localhost
-scalar.db.multi_storage.storages.cassandra.username=cassandra
-scalar.db.multi_storage.storages.cassandra.password=cassandra
-scalar.db.multi_storage.storages.mysql.storage=jdbc
-scalar.db.multi_storage.storages.mysql.contact_points=jdbc:mysql://localhost:3306/
-scalar.db.multi_storage.storages.mysql.username=root
-scalar.db.multi_storage.storages.mysql.password=mysql
-scalar.db.multi_storage.namespace_mapping=customer:mysql,order:cassandra,coordinator:cassandra
-scalar.db.multi_storage.default_storage=cassandra
-```
-
-This configuration defines two storages, `cassandra` and `mysql`, in the `scalar.db.multi_storage.storages` property.
-And the storage settings of each of them is configured in the `scalar.db.multi_storage.storages.cassandra.*` properties and the `scalar.db.multi_storage.storages.mysql.*` properties respectively.
-The `scalar.db.multi_storage.namespace_mapping` property defines the mapping between namespaces and storages, in this case, operations for the tables in the `customer` namespace are mapped to the `mysql` storage, and operations for the tables in the `order` namespace are mapped to the `cassandra` storage.
-Note that it also defines that operations for the tables in the `coordinator` namespace are mapped to the `cassandra` storage.
-The tables in the `coordinator` namespace are created automatically and used in the Scalar DB's transaction protocol called Consensus Commit. 
-And the `scalar.db.multi_storage.default_storage` property defines the default storage that’s used if a specified table doesn't have any table mapping.
-In this case, if a specified table doesn't have any table mapping, operations for the table are mapped to the `cassandra` storage.
-
-Please see below for the details of Multi-storage Transaction configurations:
-https://github.com/scalar-labs/scalardb/blob/master/docs/multi-storage-transactions.md
-
-## Set up
-
-You need to run the following `docker-compose` command:
-```
-docker-compose up -d
-```
-
-This command starts Cassandra and MySQL, and loads the schema.
-Please note that you need to wait around more than one minute for the containers to be fully started.
-
-### Initial data
-
-You first need to load initial data with the following command:
-```
-# ./gradlew run --args="LoadInitialData"
-```
-
-And the following data will be loaded:
-
-- For the `customer.customers` table:
-
-| customer_id  | name          | credit_limit | credit_total |
-| ------------ | ------------- | ------------ | ------------ |
-| 1            | Yamada Taro   | 10000        | 0            |
-| 2            | Yamada Hanako | 10000        | 0            |
-| 3            | Suzuki Ichiro | 10000        | 0            |
-
-- For the `order.items` table:
-
-| item_id  | name   | price |
-| -------- | ------ | ----- |
-| 1        | Apple  | 1000  |
-| 2        | Orange | 2000  |
-| 3        | Grape  | 2500  |
-| 4        | Mango  | 5000  |
-| 5        | Melon  | 3000  |
-
-## Run the sample application
-
-Let's start with getting the customer information whose ID is `1`:
-```
-# ./gradlew run --args="GetCustomerInfo 1"
-...
-{"id": 1, "name": "Yamada Taro", "credit_limit": 10000, "credit_total": 0}
-...
-```
-
-Then, place an order for three apples and two oranges with customer ID `1`. Note that the format of order is `<Item ID>:<Count>,<Item ID>:<Count>,...`:
-```
-# ./gradlew run --args="PlaceOrder 1 1:3,2:2"
-...
-{"order_id": "9099eca6-98b8-4ef5-a803-3166dfe635ad"}
-...
-```
-
-The command shows the order ID of the order.
-
-Let's check the details of the order with the order ID:
-```
-# ./gradlew run --args="GetOrder 9099eca6-98b8-4ef5-a803-3166dfe635ad"
-...
-{"order": {"order_id": "9099eca6-98b8-4ef5-a803-3166dfe635ad","timestamp": 1652668907742,"customer_id": 1,"customer_name": "Yamada Taro","statement": [{"item_id": 1,"item_name": "Apple","price": 1000,"count": 3,"total": 3000},{"item_id": 2,"item_name": "Orange","price": 2000,"count": 2,"total": 4000}],"total": 7000}}
-...
-```
-
-So, let's place an order again and get the order histories by customer ID `1`:
-```
-# ./gradlew run --args="PlaceOrder 1 5:1"
-...
-{"order_id": "cff41250-01aa-4a4e-ae1c-651b74bb1cff"}
-...
-# ./gradlew run --args="GetOrders 1"
-...
-{"order": [{"order_id": "9099eca6-98b8-4ef5-a803-3166dfe635ad","timestamp": 1652668907742,"customer_id": 1,"customer_name": "Yamada Taro","statement": [{"item_id": 1,"item_name": "Apple","price": 1000,"count": 3,"total": 3000},{"item_id": 2,"item_name": "Orange","price": 2000,"count": 2,"total": 4000}],"total": 7000},{"order_id": "cff41250-01aa-4a4e-ae1c-651b74bb1cff","timestamp": 1652668943114,"customer_id": 1,"customer_name": "Yamada Taro","statement": [{"item_id": 5,"item_name": "Melon","price": 3000,"count": 1,"total": 3000}],"total": 3000}]}
-...
-```
-
-These histories are ordered by timestamp in a descending manner.
-
-The current `credit_total` is `10000`, so it has reached the `credit_limit`.
-So, the customer can't place an order anymore due to the limit.
+- For Mac: Install Docker Desktop
+- For Linux:
 
 ```
-# ./gradlew run --args="GetCustomerInfo 1"
-...
-{"id": 1, "name": "Yamada Taro", "credit_limit": 10000, "credit_total": 10000}
-...
-# ./gradlew run --args="PlaceOrder 1 3:1,4:1"
-...
-java.lang.RuntimeException: Credit limit exceeded
-        at sample.Sample.placeOrder(Sample.java:185)
-        at sample.command.PlaceOrderCommand.call(PlaceOrderCommand.java:33)
-        at sample.command.PlaceOrderCommand.call(PlaceOrderCommand.java:8)
-        at picocli.CommandLine.executeUserObject(CommandLine.java:1783)
-        at picocli.CommandLine.access$900(CommandLine.java:145)
-        at picocli.CommandLine$RunLast.handle(CommandLine.java:2141)
-        at picocli.CommandLine$RunLast.handle(CommandLine.java:2108)
-        at picocli.CommandLine$AbstractParseResultHandler.execute(CommandLine.java:1975)
-        at picocli.CommandLine.execute(CommandLine.java:1904)
-        at sample.command.SampleCommand.main(SampleCommand.java:35)
-...
+sudo apt-get update
+sudo apt-get install docker
+sudo apt-get install docker-compose
 ```
 
-After repayment, the customer will be able to place an order again!
+### JDK
+
+- Install JDK
+
+## Git Clone
 
 ```
-# ./gradlew run --args="Repayment 1 8000"
-...
-# ./gradlew run --args="GetCustomerInfo 1"
-...
-{"id": 1, "name": "Yamada Taro", "credit_limit": 10000, "credit_total": 2000}
-...
-# ./gradlew run --args="PlaceOrder 1 3:1,4:1"
-...
-{"order_id": "4b1c5f53-e2fb-4489-be1f-cfc2aef29123"}
-...
+git clone git@github.com:cirusthenter/scalardb-reservation.git
+cd scalardb-reservation
 ```
 
-## Clean up
+## Docker Compose
 
-To stop Cassandra and MySQL, run the following command:
 ```
-# docker-compose down
+sudo docker-compose up -d
+```
+
+- If you have this kind of error, look what is using the port `9042` by `sudo lsof -i -P -n | grep 9042`.
+
+```
+❯ sudo docker-compose up -d
+Creating network "reservation-network" with the default driver
+Creating cassandra-reservation ...
+Creating cassandra-reservation ... error
+WARNING: Host is already in use by another container
+
+ERROR: for cassandra-reservation  Cannot start service cassandra: driver failed programming external connectivity on endpoint cassandra-reservation (de667ce95f32cd7bc0b1a56adcd1552808666d162bf80019897d3a118231b
+Creating mysql-reservation     ... done
+
+ERROR: for cassandra  Cannot start service cassandra: driver failed programming external connectivity on endpoint cassandra-reservation (de667ce95f32cd7bc0b1a56adcd1552808666d162bf80019897d3a118231ba5e): Error starting userland proxy: listen tcp4 0.0.0.0:9042: bind: address already in use
+ERROR: Encountered errors while bringing up the project.
+```
+
+## Load Initial Data
+
+初期データの読み込み
+
+```
+./gradlew run --args="LoadInitialData"
+```
+
+- 以下のようなエラーが起きたケース
+    - `Caused by: java.sql.SQLException: Access denied for user 'root'@'localhost' (using password: YES)`
+    - ローカル環境で MySQL が立ち上がっているのが原因の可能性大
+    - `brew services stop mysql` する
+
+### MySQL
+
+#### customer.customers table
+
+|customer_id|name|
+|:--:|:--:|
+|1|Elon Musk|
+|2|Tony Stark|
+|3|Steve Jobs|
+
+#### seat.seats table
+
+|seat_id|name|reserved_by|
+|:--:|:--:|:--:|
+|1|"S1"|-1|
+|2|"S2"|-1|
+|3|"A1"|-1|
+|4|"A2"|-1|
+|5|"A3"|-1|
+|6|"B1"|-1|
+|7|"B2"|-1|
+|8|"B3"|-1|
+|9|"B4"|-1|
+|10|"C1"|-1|
+|11|"C2"|-1|
+|12|"C3"|-1|
+|13|"C4"|-1|
+|14|"C5"|-1|
+
+### Cassandra
+
+#### history.histories teble
+
+|history_id|customer_id|operation|seat_id|timestamp|
+|:--:|:--:|:--:|:--:|:--:|
+
+## Reserve
+
+ユーザー2が席 3, 4, 5 を予約
+
+```
+./gradlew run --args="Reserve 2 3,4,5"
+```
+
+#### MySQL seat.seats
+
+|seat_id|name|reserved_by|
+|:--:|:--:|:--:|
+|1|"S1"|-1|
+|2|"S2"|-1|
+|3|"A1"|2|
+|4|"A2"|2|
+|5|"A3"|2|
+|6|"B1"|-1|
+|7|"B2"|-1|
+|8|"B3"|-1|
+|9|"B4"|-1|
+|10|"C1"|-1|
+|11|"C2"|-1|
+|12|"C3"|-1|
+|13|"C4"|-1|
+|14|"C5"|-1|
+
+#### Cassandra history.histories
+
+|history_id|customer_id|operation|seat_id|timestamp|
+|:--:|:--:|:--:|:--:|:--:|
+|e3b920be-2ee3-4246-9bc0-d5cb1ff71f0d|2|reserve|3|1656652667347|
+|10ea7ad3-4be1-4271-9914-098635109edc|2|reserve|4|1656652667352|
+|c76735e7-1d52-498b-8b07-e73d27143ca6|2|reserve|5|1656652667356|
+
+## Cancel Reservation
+
+ユーザー2が席3, 5 の予約をキャンセル
+
+```
+./gradlew run --args="Cancel 2 3,5"
+```
+
+
+#### MySQL seat.seats
+
+|seat_id|name|reserved_by|
+|:--:|:--:|:--:|
+|1|"S1"|-1|
+|2|"S2"|-1|
+|3|"A1"|-1|
+|4|"A2"|2|
+|5|"A3"|-1|
+|6|"B1"|-1|
+|7|"B2"|-1|
+|8|"B3"|-1|
+|9|"B4"|-1|
+|10|"C1"|-1|
+|11|"C2"|-1|
+|12|"C3"|-1|
+|13|"C4"|-1|
+|14|"C5"|-1|
+
+#### Cassandra history.histories
+
+|history_id|customer_id|operation|seat_id|timestamp|
+|:--:|:--:|:--:|:--:|:--:|
+|e3b920be-2ee3-4246-9bc0-d5cb1ff71f0d|2|reserve|3|1656652667347|
+|10ea7ad3-4be1-4271-9914-098635109edc|2|reserve|4|1656652667352|
+|c76735e7-1d52-498b-8b07-e73d27143ca6|2|reserve|5|1656652667356|
+|e8385020-c8f2-474b-98dd-d00328fa718f|2|cancel|3|1656652800722|
+|f29f386d-7c96-476c-97a5-ecde23f3b8fe|2|cancel|5|1656652800726|
+
+## History
+
+ユーザー2の予約/予約削除の履歴を一覧表示
+
+```
+./gradlew run --args="GetHistories 2"
+```
+
+以下のような表示が出る
+
+```
+operation: reserve, seat: A1, time: 2022-07-01 14:17:47.347
+operation: reserve, seat: A2, time: 2022-07-01 14:17:47.352
+operation: reserve, seat: A3, time: 2022-07-01 14:17:47.356
+operation: cancel, seat: A1, time: 2022-07-01 14:20:00.722
+operation: cancel, seat: A3, time: 2022-07-01 14:20:00.726
+```
+
+## ユーザー情報表示
+
+ユーザー2の情報を表示
+
+```
+./gradlew run --args="GetCustomerInfo 2"
+```
+
+以下のような表示が出る
+
+```
+"id": 2, "name": "Steve Jobs"
 ```

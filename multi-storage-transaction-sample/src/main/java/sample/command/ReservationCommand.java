@@ -1,21 +1,21 @@
-package sample.command;
+package reservation.command;
 
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 @Command(
-    name = "bin/sample",
-    description = "Sample application for Microservice Transaction",
+    name = "bin/reservation",
+    description = "Reservation application for Microservice Transaction",
     subcommands = {
       LoadInitialDataCommand.class,
-      PlaceOrderCommand.class,
-      GetOrderCommand.class,
-      GetOrdersCommand.class,
+      ReserveCommand.class,
+      CancelCommand.class,
+      GetHistoriesCommand.class,
       GetCustomerInfoCommand.class,
-      RepaymentCommand.class
     })
-public class SampleCommand implements Runnable {
+
+public class ReservationCommand implements Runnable {
 
   @Option(
       names = {"-h", "--help"},
@@ -32,6 +32,6 @@ public class SampleCommand implements Runnable {
   }
 
   public static void main(String[] args) {
-    new CommandLine(new SampleCommand()).execute(args);
+    new CommandLine(new ReservationCommand()).execute(args);
   }
 }

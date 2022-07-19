@@ -1,16 +1,16 @@
-package sample.command;
+package reservation.command;
 
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
-import sample.Sample;
+import reservation.Reservation;
 
 @Command(name = "LoadInitialData", description = "Load initial data")
 public class LoadInitialDataCommand implements Callable<Integer> {
 
   @Override
   public Integer call() throws Exception {
-    try (Sample sample = new Sample()) {
-      sample.loadInitialData();
+    try (Reservation reservation = new Reservation()) {
+      reservation.loadInitialData();
     }
     return 0;
   }
